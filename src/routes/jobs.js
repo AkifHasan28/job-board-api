@@ -1,9 +1,10 @@
 import { Router } from "express";
 import Job from "../models/Job.js";
+import auth, { requireRole } from "../middleware/auth.js";
 
 const router = Router();
 
-// GET /jobs  -> list all jobs
+// GET /jobs  -> list all jobs (public)
 router.get("/", async (req, res) => {
   try {
     const jobs = await Job.find().sort({ createdAt: -1 });
@@ -14,21 +15,16 @@ router.get("/", async (req, res) => {
   }
 });
 
-export default router;
-
-// POST /jobs -> create a new job
-router.post("/", async (req, res) => {
+// POST /jobs -> create a new job (auth required)
+router.post("/", auth, async (req, res) => {
   try {
     const { title, description, company, location, salary } = req.body;
 
-    // basic validation
     if (!title || !description || !company || !location) {
       return res.status(400).json({ message: "All required fields must be filled" });
     }
 
-    const newJob = new Job({ title, description, company, location, salary });
-    await newJob.save();
-
+    const newJob = await Job.create({ title, description, company, location, salary });
     res.status(201).json(newJob);
   } catch (err) {
     console.error(err);
@@ -36,20 +32,17 @@ router.post("/", async (req, res) => {
   }
 });
 
-// GET /jobs/:id -> get one job by id
+// GET /jobs/:id -> get one job by id (public)
 router.get("/:id", async (req, res) => {
   try {
     const { id } = req.params;
 
-    // quick guard for invalid ObjectId
-    if (!id || !id.match(/^[0-9a-fA-F]{24}$/)) {
+    if (!id?.match(/^[0-9a-fA-F]{24}$/)) {
       return res.status(400).json({ message: "Invalid job id" });
     }
 
     const job = await Job.findById(id);
-    if (!job) {
-      return res.status(404).json({ message: "Job not found" });
-    }
+    if (!job) return res.status(404).json({ message: "Job not found" });
 
     res.json(job);
   } catch (err) {
@@ -58,26 +51,21 @@ router.get("/:id", async (req, res) => {
   }
 });
 
-// PUT /jobs/:id -> update a job
-router.put("/:id", async (req, res) => {
+// PUT /jobs/:id -> update a job (auth required)
+router.put("/:id", auth, async (req, res) => {
   try {
     const { id } = req.params;
 
-    if (!id || !id.match(/^[0-9a-fA-F]{24}$/)) {
+    if (!id?.match(/^[0-9a-fA-F]{24}$/)) {
       return res.status(400).json({ message: "Invalid job id" });
     }
 
-    // allow partial updates, but keep validation
-    const updates = req.body;
-
-    const updated = await Job.findByIdAndUpdate(id, updates, {
-      new: true,            // return the updated doc
-      runValidators: true,  // respect schema rules
+    const updated = await Job.findByIdAndUpdate(id, req.body, {
+      new: true,
+      runValidators: true,
     });
 
-    if (!updated) {
-      return res.status(404).json({ message: "Job not found" });
-    }
+    if (!updated) return res.status(404).json({ message: "Job not found" });
 
     res.json(updated);
   } catch (err) {
@@ -86,19 +74,17 @@ router.put("/:id", async (req, res) => {
   }
 });
 
-// DELETE /jobs/:id -> delete a job
-router.delete("/:id", async (req, res) => {
+// DELETE /jobs/:id -> delete a job (admin only)
+router.delete("/:id", auth, requireRole("admin"), async (req, res) => {
   try {
     const { id } = req.params;
 
-    if (!id || !id.match(/^[0-9a-fA-F]{24}$/)) {
+    if (!id?.match(/^[0-9a-fA-F]{24}$/)) {
       return res.status(400).json({ message: "Invalid job id" });
     }
 
     const deleted = await Job.findByIdAndDelete(id);
-    if (!deleted) {
-      return res.status(404).json({ message: "Job not found" });
-    }
+    if (!deleted) return res.status(404).json({ message: "Job not found" });
 
     res.json({ message: "Job deleted", id: deleted._id });
   } catch (err) {
@@ -106,3 +92,5 @@ router.delete("/:id", async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
+export default router;

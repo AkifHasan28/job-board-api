@@ -2,6 +2,8 @@ import express from "express";
 import dotenv from "dotenv";
 import mongoose from "mongoose";
 import jobRoutes from "./routes/jobs.js";
+import authRoutes from "./routes/auth.js";
+
 
 dotenv.config(); // must be first, before using process.env
 
@@ -13,6 +15,7 @@ app.get("/", (req, res) => {
 });
 
 app.use("/jobs", jobRoutes);
+app.use("/auth", authRoutes);
 
 const PORT = process.env.PORT || 5000;
 
