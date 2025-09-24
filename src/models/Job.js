@@ -13,3 +13,11 @@ const jobSchema = new mongoose.Schema(
 );
 
 export default mongoose.model("Job", jobSchema);
+
+// Full-text search on common fields
+jobSchema.index({
+  title: "text",
+  description: "text",
+  company: "text",
+  location: "text",
+});

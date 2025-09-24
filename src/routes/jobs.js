@@ -4,16 +4,88 @@ import auth, { requireRole } from "../middleware/auth.js";
 
 const router = Router();
 
-// GET /jobs  -> list all jobs (public)
+// GET /jobs -> list jobs with search, filters, sorting, pagination (public)
 router.get("/", async (req, res) => {
   try {
-    const jobs = await Job.find().sort({ createdAt: -1 });
-    res.json(jobs);
+    const {
+      // filters
+      location,
+      company,
+      minSalary,
+      maxSalary,
+      from,       // ISO date string e.g. 2025-01-01
+      to,         // ISO date string
+      q,          // text search
+
+      // pagination & sort
+      page = 1,
+      limit = 10,
+      sort = "-createdAt", // "-createdAt", "salary", "-salary", "company"
+    } = req.query;
+
+    const filters = {};
+
+    if (location) filters.location = location;
+    if (company) filters.company = company;
+
+    // salary range
+    if (minSalary || maxSalary) {
+      filters.salary = {};
+      if (minSalary) filters.salary.$gte = Number(minSalary);
+      if (maxSalary) filters.salary.$lte = Number(maxSalary);
+    }
+
+    // createdAt range
+    if (from || to) {
+      filters.createdAt = {};
+      if (from) filters.createdAt.$gte = new Date(from);
+      if (to) filters.createdAt.$lte = new Date(to);
+    }
+
+    // text search (requires jobSchema.index({...}) in the model)
+    let projection;
+    let sortObj;
+
+    if (q) {
+      filters.$text = { $search: q };
+      projection = { score: { $meta: "textScore" } };
+      sortObj = { score: { $meta: "textScore" } };
+    } else {
+      // parse sort string into object
+      sortObj = {};
+      String(sort)
+        .split(",")
+        .filter(Boolean)
+        .forEach((field) => {
+          if (field.startsWith("-")) sortObj[field.slice(1)] = -1;
+          else sortObj[field] = 1;
+        });
+    }
+
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const lim = Math.min(50, Math.max(1, parseInt(limit, 10) || 10));
+    const skip = (pageNum - 1) * lim;
+
+    const [total, data] = await Promise.all([
+      Job.countDocuments(filters),
+      Job.find(filters, projection).sort(sortObj).skip(skip).limit(lim),
+    ]);
+
+    res.json({
+      page: pageNum,
+      limit: lim,
+      total,
+      totalPages: Math.ceil(total / lim) || 1,
+      hasPrev: pageNum > 1,
+      hasNext: pageNum * lim < total,
+      data,
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Server error" });
   }
 });
+
 
 // POST /jobs -> create a new job (auth required)
 router.post("/", auth, async (req, res) => {
